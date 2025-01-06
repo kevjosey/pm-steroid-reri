@@ -88,19 +88,22 @@ ipwtm_rf <- function(exposure, numerator = NULL, denominator, id, timevar, data,
     tempdat$weights.trunc[tempdat$ipw.weights > quantile(tempdat$ipw.weights, 1 - trunc)] <- quantile(tempdat$ipw.weights, 1 - trunc)
   }
   
+  outdat <- tempdat[order(order.orig),]
+  
   if (is.null(numerator)) {
     if (is.null(trunc))
-      return(list(ipw.weights = tempdat$ipw.weights, call = match.call(), den.mod = mod2))
+      return(list(ipw.weights = outdat$ipw.weights, call = match.call(), den.mod = mod2))
     else
-      return(list(ipw.weights = tempdat$ipw.weights, weights.trunc = tempdat$weights.trunc,
+      return(list(ipw.weights = outdat$ipw.weights, weights.trunc = outdat$weights.trunc,
                   call = match.call(), den.mod = mod2))
   } else {
     if (is.null(trunc))
-      return(list(ipw.weights = tempdat$ipw.weights, call = match.call(), num.mod = mod1, den.mod = mod2))
+      return(list(ipw.weights = outdat$ipw.weights, call = match.call(), num.mod = mod1, den.mod = mod2))
     else
-      return(list(ipw.weights = tempdat$ipw.weights, weights.trunc = tempdat$weights.trunc,
+      return(list(ipw.weights = outdat$ipw.weights, weights.trunc = outdat$weights.trunc,
                   call = match.call(), num.mod = mod1, den.mod = mod2))
   }
+
 }
 
 # Function for IPW-TM using XGBoost
@@ -186,19 +189,22 @@ ipwtm_xgb <- function(exposure, numerator = NULL, denominator, id, timevar, data
     tempdat$weights.trunc[tempdat$ipw.weights > quantile(tempdat$ipw.weights, 1 - trunc)] <- quantile(tempdat$ipw.weights, 1 - trunc)
   }
   
+  outdat <- tempdat[order(order.orig),]
+  
   if (is.null(numerator)) {
     if (is.null(trunc))
-      return(list(ipw.weights = tempdat$ipw.weights, call = match.call(), den.mod = mod2))
+      return(list(ipw.weights = outdat$ipw.weights, call = match.call(), den.mod = mod2))
     else
-      return(list(ipw.weights = tempdat$ipw.weights, weights.trunc = tempdat$weights.trunc,
+      return(list(ipw.weights = outdat$ipw.weights, weights.trunc = outdat$weights.trunc,
                   call = match.call(), den.mod = mod2))
   } else {
     if (is.null(trunc))
-      return(list(ipw.weights = tempdat$ipw.weights, call = match.call(), num.mod = mod1, den.mod = mod2))
+      return(list(ipw.weights = outdat$ipw.weights, call = match.call(), num.mod = mod1, den.mod = mod2))
     else
-      return(list(ipw.weights = tempdat$ipw.weights, weights.trunc = tempdat$weights.trunc,
+      return(list(ipw.weights = outdat$ipw.weights, weights.trunc = outdat$weights.trunc,
                   call = match.call(), num.mod = mod1, den.mod = mod2))
   }
+
 }
 
 # Function for IPW-TM using GEE
@@ -214,12 +220,12 @@ ipwtm_gee <- function(exposure, numerator = NULL, denominator, id, timevar, data
   
   # Calculate numerator probabilities using GEE
   if (is.null(numerator)) {
-    fmla.num <- update.formula(numerator, formula(paste0(exposure," ~ 1")))
+    fmla.num <- formula(paste0(exposure," ~ 1"))
   } else {
     fmla.num <- update.formula(numerator, formula(paste0(exposure," ~ .")))
   }
   
-  mod1 <- geeglm(formula = fmla.num, data = data, id = id, corstr = "ar1", ...)
+  mod1 <- geeglm(formula = fmla.num, data = data, id = tempdat$id, waves = tempdat$timevar, corstr = "ar1")
   mod1.pred <- as.numeric(predict(mod1))
   mod1.sd <- sqrt(as.numeric(summary(mod1)$dispersion[1]))
   
@@ -228,8 +234,8 @@ ipwtm_gee <- function(exposure, numerator = NULL, denominator, id, timevar, data
   tempdat$p.numerator <- approx(x = dens.num$x, y = dens.num$y, xout = a.num)$y / mod1.sd
   
   # Calculate denominator probabilities using GEE
-  mod2 <- geeglm(update.formula(denominator, formula(paste0(exposure," ~ ."))),
-                 data = data, id = id, corstr = "ar1", ...)
+  fmla.denom <- update.formula(denominator, formula(paste0(exposure," ~ .")))
+  mod2 <- geeglm(fmla.denom, data = data, id = tempdat$id, waves = tempdat$timevar, corstr = "ar1")
   mod2.pred <- as.numeric(predict(mod2))
   mod2.sd <- sqrt(as.numeric(summary(mod2)$dispersion[1]))
   
@@ -237,7 +243,7 @@ ipwtm_gee <- function(exposure, numerator = NULL, denominator, id, timevar, data
   dens.denom <- density(a.denom)
   tempdat$p.denominator <- approx(x = dens.denom$x, y = dens.denom$y, xout = a.denom)$y / mod2.sd
   
-  tempdat$ipw.weights <- tempdat$p.numerator / tempdat$p.denominator
+  tempdat$ipw.weights <- unsplit(lapply(split(with(tempdat, p.numerator/p.denominator), tempdat$id), function(x) cumprod(x)), tempdat$id)
   
   if (sum(is.na(tempdat$ipw.weights)) > 0)
     stop("NA's in weights!")
@@ -248,17 +254,20 @@ ipwtm_gee <- function(exposure, numerator = NULL, denominator, id, timevar, data
     tempdat$weights.trunc[tempdat$ipw.weights > quantile(tempdat$ipw.weights, 1 - trunc)] <- quantile(tempdat$ipw.weights, 1 - trunc)
   }
   
+  outdat <- tempdat[order(order.orig),]
+  
   if (is.null(numerator)) {
     if (is.null(trunc))
-      return(list(ipw.weights = tempdat$ipw.weights, call = match.call(), den.mod = mod2))
+      return(list(ipw.weights = outdat$ipw.weights, call = match.call(), den.mod = mod2))
     else
-      return(list(ipw.weights = tempdat$ipw.weights, weights.trunc = tempdat$weights.trunc,
+      return(list(ipw.weights = outdat$ipw.weights, weights.trunc = outdat$weights.trunc,
                   call = match.call(), den.mod = mod2))
   } else {
     if (is.null(trunc))
-      return(list(ipw.weights = tempdat$ipw.weights, call = match.call(), num.mod = mod1, den.mod = mod2))
+      return(list(ipw.weights = outdat$ipw.weights, call = match.call(), num.mod = mod1, den.mod = mod2))
     else
-      return(list(ipw.weights = tempdat$ipw.weights, weights.trunc = tempdat$weights.trunc,
+      return(list(ipw.weights = outdat$ipw.weights, weights.trunc = outdat$weights.trunc,
                   call = match.call(), num.mod = mod1, den.mod = mod2))
   }
+  
 }
